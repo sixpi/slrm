@@ -26,7 +26,8 @@ def slrm_status(args):
         name = proj.name
         changes = proj.num_changed()
 
-        print(row_format.format(name, changes))
+        if not args.only_changed or changes != 0:
+            print(row_format.format(name, changes))
 
 def slrm_list(args):
     project_json = slrm_get_projects(args)
@@ -80,6 +81,8 @@ def slrm_add(args):
     with open(args.projects, "w") as f:
         _json.dump(project_json, f, indent=2, separators=(',',':'))
 
+    print("Successfully added repository %s" % project_name)
+
 def main():
     import argparse
     import sys
@@ -93,6 +96,7 @@ def main():
 
     status_command = subparsers.add_parser("status",
                                            help="Get status of all repositories")
+    status_command.add_argument("-c", "--only-changed", action='store_true')
     status_command.set_defaults(func=slrm_status)
 
     list_command = subparsers.add_parser("list",
