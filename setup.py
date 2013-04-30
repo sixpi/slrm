@@ -14,7 +14,7 @@ setup(
     },
     install_requires=['pygit2'],
     
-      # Testing
+    # Testing
     test_suite='nose.collector',
     tests_require=['nose'],
 )

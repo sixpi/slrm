@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import project as _p
 import json as _json
 import os as _os
