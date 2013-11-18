@@ -1,12 +1,11 @@
 import subprocess
-from subprocess import DEVNULL
-import json
+from subprocess import DEVNULL, CalledProcessError
 import os
 import sys
 
 from path import path
 import colorama
-from colorama import Fore, Back, Style
+from colorama import Fore, Style
 
 
 class Project(object):
@@ -67,7 +66,8 @@ def slrm_get_projects():
 
 
 def slrm_status(args):
-    header_format = (Style.BRIGHT + Fore.GREEN + "{0!s:<20} {1!s:>8} {2!s:>16} {3!s:>16}" +
+    header_format = (Style.BRIGHT + Fore.GREEN +
+                     "{0!s:<20} {1!s:>8} {2!s:>16} {3!s:>16}" +
                      Style.NORMAL + Fore.RESET)
     print(header_format.format("Name", "Changes", "Origin", "Upstream"))
 
@@ -81,18 +81,28 @@ def slrm_status(args):
         upstream_stat = "-/-"
 
         if "origin" in project.remotes():
-            origin_unpulled, origin_unpushed = [int(x) for x in subprocess.check_output(
-                ["git", "rev-list", "--count", "--left-right","HEAD",
-                 "origin/{0}...HEAD".format(local_branch)]).split()]
-            origin_stat = "{0}/{1}".format(origin_unpushed,
-                                           origin_unpulled)
+            try:
+                origin_unpulled, origin_unpushed = [
+                    int(x) for x in subprocess.check_output(
+                        ["git", "rev-list", "--count", "--left-right","HEAD",
+                         "origin/{0}...HEAD".format(local_branch)],
+                        stderr=DEVNULL).split()]
+                origin_stat = "{0}/{1}".format(origin_unpushed,
+                                               origin_unpulled)
+            except CalledProcessError:
+                pass
 
         if "upstream" in project.remotes():
-            upstream_unpulled, upstream_unpushed = [int(x) for x in subprocess.check_output(
-                ["git", "rev-list", "--count", "--left-right","HEAD",
-                 "upstream/{0}...HEAD".format(local_branch)]).split()]
-            upstream_stat = "{0}/{1}".format(upstream_unpushed,
-                                             upstream_unpulled)
+            try:
+                upstream_unpulled, upstream_unpushed = [
+                    int(x) for x in subprocess.check_output(
+                        ["git", "rev-list", "--count", "--left-right","HEAD",
+                         "upstream/{0}...HEAD".format(local_branch)],
+                        stderr=DEVNULL).split()]
+                upstream_stat = "{0}/{1}".format(upstream_unpushed,
+                                                 upstream_unpulled)
+            except CalledProcessError:
+                pass
 
         print(row_format.format(name, project.num_changed(),
                                 origin_stat, upstream_stat))
