@@ -10,7 +10,8 @@ setup(
     author='Bing Xia',
     author_email="aix.bing@gmail.com",
     packages=['slrm'],
-    install_requires=['colorama'],
+    install_requires=['colorama',
+                      'path.py'],
 
     entry_points={
         'console_scripts': ['slrm = slrm.slrm:main']
