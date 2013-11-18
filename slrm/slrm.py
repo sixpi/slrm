@@ -1,96 +1,166 @@
-import project as _p
-import json as _json
-import os as _os
-import pygit2 as _pygit2
-import pysvn as _pysvn
+import subprocess
+from subprocess import DEVNULL
+import json
+import os
+import sys
 
-def slrm_get_projects(args):
-    with open(args.projects, "r") as f:
-        project_json = _json.load(f)
-    return project_json
+from path import path
+import colorama
+from colorama import Fore, Back, Style
+
+
+class Project(object):
+    def __init__(self, name, directory):
+        pass
+
+    def num_changed(self):
+        return 0
+
+
+class GitProject(Project):
+
+    def __init__(self, name, directory):
+        self.name = name
+        self.directory = path(directory)
+
+    def num_changed(self):
+        changes = subprocess.check_output(
+            ["git", "status", "--porcelain"]).decode('utf-8')
+        return len(changes.split("\n"))
+
+    def unpushed(self):
+        return 0
+
+    def remotes(self):
+        self.directory.chdir()
+        remotes = subprocess.check_output(
+            ["git", "remote"]).decode('utf-8').split()
+        return remotes
+
+    def cur_branch(self):
+        self.directory.chdir()
+        branch = subprocess.check_output(
+            ["git", "rev-parse",
+             "--abbrev-ref", "HEAD"]).decode('utf-8').strip()
+        return branch
+
+
+def slrm_get_projects():
+    slrm_dir = path("~/.slrm.d").expanduser()
+    slrm_dir.mkdir_p()
+
+    projects = []
+
+    for d in slrm_dir.dirs("*"):
+        name = d.basename()
+
+        d.chdir()
+        ret = subprocess.check_call(["git", "status"],
+                                    stdout=DEVNULL,
+                                    stderr=subprocess.STDOUT)
+
+        if ret != 0:
+            continue
+        projects.append(GitProject(name, d))
+
+    return projects
+
 
 def slrm_status(args):
-    project_json = slrm_get_projects(args)
+    header_format = (Style.BRIGHT + Fore.GREEN + "{0!s:<20} {1!s:>8} {2!s:>16} {3!s:>16}" +
+                     Style.NORMAL + Fore.RESET)
+    print(header_format.format("Name", "Changes", "Origin", "Upstream"))
 
-    projects = project_json["projects"]
+    row_format = "{0:<20} {1:>8d} {2!s:>16} {3!s:>16}"
+    for project in slrm_get_projects():
+        name = project.name
 
-    header_format = "{0!s:<20} {1!s:<8}"
-    print(header_format.format("Name", "Changes"))
+        local_branch = project.cur_branch()
 
-    row_format = "{0:<20} {1:>8d}"
-    for p in projects:
-        proj = _p.get_project(p)
+        origin_stat = "-/-"
+        upstream_stat = "-/-"
 
-        name = proj.name
-        changes = proj.num_changed()
+        if "origin" in project.remotes():
+            origin_unpulled, origin_unpushed = [int(x) for x in subprocess.check_output(
+                ["git", "rev-list", "--count", "--left-right","HEAD",
+                 "origin/{0}...HEAD".format(local_branch)]).split()]
+            origin_stat = "{0}/{1}".format(origin_unpushed,
+                                           origin_unpulled)
 
-        if not args.only_changed or changes != 0:
-            print(row_format.format(name, changes))
+        if "upstream" in project.remotes():
+            upstream_unpulled, upstream_unpushed = [int(x) for x in subprocess.check_output(
+                ["git", "rev-list", "--count", "--left-right","HEAD",
+                 "upstream/{0}...HEAD".format(local_branch)]).split()]
+            upstream_stat = "{0}/{1}".format(upstream_unpushed,
+                                             upstream_unpulled)
+
+        print(row_format.format(name, project.num_changed(),
+                                origin_stat, upstream_stat))
+
 
 def slrm_list(args):
-    project_json = slrm_get_projects(args)
+    projects = slrm_get_projects()
 
-    for name in map(lambda x: x["name"], project_json["projects"]):
-        print(name)
+    for project in projects:
+        print(project.name)
+
 
 def slrm_add(args):
-    project_json = slrm_get_projects(args)
-
-    project_type = None
-    directory = _os.path.realpath(args.directory)
-    if project_type is None:
-        try:
-            git_dir = _pygit2.discover_repository(directory)
-            r = _pygit2.Repository(git_dir)
-            directory = r.workdir
-            project_type = "git"
-        except KeyError:
-            pass
-    if project_type is None:
-        try:
-            _pysvn.Client().info(directory)
-            project_type = "svn"
-        except ClientError:
-            pass
-
-    if project_type is None:
-        print("Error: unknown repository type")
-        exit(1)
-    existing_directories = map(lambda x: x["directory"], project_json["projects"])
-    if directory in existing_directories:
-        print("Error: repository %s already exists" % directory)
-        exit(1)
+    directory = path(args.directory).realpath()
 
     project_name = args.name
     if not project_name:
-        _, project_name = _os.path.split(directory.rstrip("/"))
+        project_name = directory.basename()
 
-    existing_names = map(lambda x: x["name"], project_json["projects"])
+    existing_names = [project.name for project in slrm_get_projects()]
     if project_name in existing_names:
         print("Error: project %s already exists" % project_name)
         exit(1)
 
-    project_dict = {
-        "name": project_name,
-        "directory": directory,
-        "type": project_type}
-    project_json["projects"].append(project_dict)
+    slrm_dir = path("~/.slrm.d").expanduser()
+    slrm_dir.mkdir_p()
 
-    with open(args.projects, "w") as f:
-        _json.dump(project_json, f, indent=2, separators=(',',':'))
+    directory.chdir()
+    directory.symlink(slrm_dir/project_name)
 
     print("Successfully added repository %s" % project_name)
 
-def main():
-    import argparse
-    import sys
 
-    home_dir = _os.path.expanduser("~")
+def slrm_dir(args):
+    projects = slrm_get_projects()
+    project = args.project.strip()
+
+    exact_matches = [p for p in projects if p.name == project]
+    prefix_matches = [p for p in projects if p.name.startswith(project)]
+
+    if len(exact_matches) == 1:
+        p = exact_matches[0]
+    elif len(prefix_matches) == 1:
+        p = prefix_matches[0]
+    elif len(prefix_matches) > 1:
+        print("'{0}' is ambiguous".format(project))
+        if len(prefix_matches) < 5: # arbitrary cutoff for printing suggestions
+            print("Did you mean one of:")
+            for p in prefix_matches:
+                print("\t{0}".format(p["name"]))
+        exit(1)
+    else:
+        print("No matches for {0}".format(project))
+        exit(1)
+
+    print(p.directory.realpath())
+
+
+def make_parser():
+    import argparse
+
+    home_dir = os.path.expanduser("~")
 
     parser = argparse.ArgumentParser(description='Manage local repositories')
     parser.add_argument("-p", "--projects", default=("%s/.slrm" % home_dir),
-                        help="use alternate project file (defaults to $HOME/.slrm)")
-    subparsers = parser.add_subparsers(help="subparser help")
+                        help="use alternate project file (defaults"
+                        " to $HOME/.slrm)")
+    subparsers = parser.add_subparsers()
 
     status_command = subparsers.add_parser("status",
                                            help="Get status of all repositories")
@@ -109,8 +179,26 @@ def main():
                              help="Directory to add", default=".")
     add_command.set_defaults(func=slrm_add)
 
-    args = parser.parse_args()
+    dir_command = subparsers.add_parser("dir",
+                                        help="Print a project directory")
+    dir_command.add_argument("project", help="Name of project")
+    dir_command.set_defaults(func=slrm_dir)
+
+    return parser
+
+
+def main():
+    colorama.init()
+    parser = make_parser()
+
+    if len(sys.argv) == 1:
+        args = parser.parse_args(args=['status'])
+    else:
+        args = parser.parse_args()
+
     args.func(args)
+    colorama.deinit()
+
 
 if __name__ == "__main__":
     main()
