@@ -82,6 +82,9 @@ def slrm_status(args):
 
         if "origin" in project.remotes():
             try:
+                subprocess.call(["git", "fetch", "origin"],
+                                stdout=DEVNULL, stderr=subprocess.STDOUT)
+
                 origin_unpulled, origin_unpushed = [
                     int(x) for x in subprocess.check_output(
                         ["git", "rev-list", "--count", "--left-right","HEAD",
@@ -94,6 +97,8 @@ def slrm_status(args):
 
         if "upstream" in project.remotes():
             try:
+                subprocess.call(["git", "fetch", "upstream"])
+
                 upstream_unpulled, upstream_unpushed = [
                     int(x) for x in subprocess.check_output(
                         ["git", "rev-list", "--count", "--left-right","HEAD",
