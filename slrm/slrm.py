@@ -25,7 +25,7 @@ class GitProject(Project):
     def num_changed(self):
         changes = subprocess.check_output(
             ["git", "status", "--porcelain"]).decode('utf-8')
-        return len(changes.split("\n"))
+        return len([x for x in changes.strip().split("\n") if x])
 
     def unpushed(self):
         return 0
